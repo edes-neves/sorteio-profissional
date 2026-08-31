@@ -1,0 +1,7 @@
+customtkinter
+Pillow
+screeninfo
+pygame
+pyinstaller
+python-docx
+pypdf

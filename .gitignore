@@ -1,0 +1,33 @@
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Artefatos de build (PyInstaller, linuxdeploy, AppImage)
+build/
+dist/
+AppDir/
+*.spec
+.appimage-tools/
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Configurações locais do usuário
+config/settings.json
+
+# Dados gerados em tempo de execução
+logs/
+exports/
+
+# Arquivos temporários / scratch
+tempCodeRunnerFile.py
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
