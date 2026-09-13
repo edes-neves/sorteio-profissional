@@ -51,6 +51,15 @@ class SettingsManager:
                 "monitor_index": 0,
                 "public_monitor": 1,
                 "public_alpha": 0.65,
+                "public_transparent": True,
+                "public_bg": "",
+                "public_primary": "",
+                "public_text": "",
+                "public_text_secondary": "",
+            },
+            "ui": {
+                "settings_w": 820,
+                "settings_h": 720,
             },
             "history": {
                 "auto_export": False,

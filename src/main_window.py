@@ -1,4 +1,5 @@
 import tkinter as tk
+import webbrowser
 from typing import Optional
 
 import customtkinter as ctk
@@ -10,6 +11,7 @@ from src.lottery_engine import LotteryEngine
 from src.settings_manager import SettingsManager
 from src.sound_manager import SoundManager
 from src.theme_manager import ThemeManager
+from src.updater import SUPPORT_EMAIL
 from src.validator import Validator, ValidationError
 
 
@@ -55,6 +57,73 @@ class MainWindow:
 
         self._build_ui()
 
+    def _card_style(self) -> dict:
+        """Borda colorida sutil nos cartões de seção, APENAS no tema claro,
+        para separar visualmente uma seção da outra. No tema escuro nenhuma
+        borda é adicionada (look atual mantido)."""
+        if self._theme.theme_name == "light":
+            return {
+                "border_width": 1,
+                "border_color": self._theme.c("border"),
+            }
+        return {}
+
+    def _accent_bar(self, parent: ctk.CTkFrame, token: str, top: bool = False) -> None:
+        """Barra colorida no cartão de seção (tema claro).
+
+        Cada seção ganha uma cor vibrante própria no topo e na base do
+        cartão, separando-a das demais. No tema escuro a barra assume a cor
+        do cartão, ficando invisível (nenhuma mudança no modo escuro)."""
+        color = (
+            self._theme.c(token)
+            if self._theme.theme_name == "light"
+            else self._theme.c("bg_card")
+        )
+        bar = ctk.CTkFrame(
+            parent,
+            height=4,
+            corner_radius=2,
+            fg_color=color,
+        )
+        bar.place(
+            relx=0,
+            rely=0.0 if top else 1.0,
+            anchor="nw" if top else "sw",
+            relwidth=1.0,
+        )
+        self._accent_bars.append((bar, token))
+
+    def _section_accent(self, token: str) -> str:
+        """Cor vibrante da seção (tema claro); no escuro mantém o primary
+        de sempre."""
+        if self._theme.theme_name == "light":
+            return self._theme.c(token)
+        return self._theme.c("primary")
+
+    def _track_btn(self, btn: ctk.CTkButton, fg_token: str, hover_token: str) -> None:
+        """Registra um botão dinâmico para atualização no refresh_theme."""
+        btn._fg_token = fg_token
+        btn._hover_token = hover_token
+        btn.configure(
+            fg_color=self._theme.c(fg_token),
+            hover_color=self._theme.c(hover_token),
+            text_color=self._theme.c("btn_text"),
+        )
+        self._dynamic_buttons.append((btn, fg_token, hover_token))
+
+    def _set_btn_theme(
+        self, btn: ctk.CTkButton, fg_token: str, hover_token: str | None = None
+    ) -> None:
+        """Altera tokens de um botão já registrado."""
+        hover_token = hover_token or getattr(btn, "_hover_token", "btn_primary_hover")
+        btn._fg_token = fg_token
+        btn._hover_token = hover_token
+        btn.configure(
+            fg_color=self._theme.c(fg_token),
+            hover_color=self._theme.c(hover_token),
+            text_color=self._theme.c("btn_text"),
+        )
+
     def _build_ui(self) -> None:
         self._master.title(f"Sorteio Profissional v{APP_VERSION} - Operador")
         self._master.configure(fg_color=self._theme.c("bg"))
@@ -66,6 +135,10 @@ class MainWindow:
             fg_color=self._theme.c("bg"),
         )
         self._container.pack(fill="both", expand=True, padx=20, pady=20)
+        self._section_cards: list[ctk.CTkFrame] = []
+        self._accent_bars: list[tuple[ctk.CTkFrame, str]] = []
+        self._section_labels: list[tuple[ctk.CTkLabel, str]] = []
+        self._dynamic_buttons: list[tuple[ctk.CTkButton, str, str]] = []
 
         self._build_header()
         self._build_status_frame()
@@ -136,32 +209,38 @@ class MainWindow:
             accelerator="Ctrl+R",
             command=self._on_reset_click,
         )
-        editar.add_separator()
-        editar.add_command(
+        menu.add_cascade(label="Editar", menu=editar)
+
+        exibir = tk.Menu(menu, tearoff=0)
+        exibir.add_command(
             label="Alternar Tema",
             accelerator="Ctrl+T",
             command=self._on_toggle_theme_click,
         )
-        menu.add_cascade(label="Editar", menu=editar)
-
-        acessar = tk.Menu(menu, tearoff=0)
-        acessar.add_command(
+        exibir.add_separator()
+        exibir.add_command(
             label="Tela Cheia (F11)",
             accelerator="F11",
             command=self._on_fullscreen_click,
         )
-        acessar.add_command(
+        exibir.add_command(
             label="Minimizar/Restaurar Tela Pública",
             accelerator="Ctrl+M",
             command=self._on_minimize_click,
         )
-        menu.add_cascade(label="Acessar", menu=acessar)
+        menu.add_cascade(label="Exibir", menu=exibir)
 
         sobre = tk.Menu(menu, tearoff=0)
         sobre.add_command(
             label="Sobre o Sorteio Profissional",
             command=self._on_about_click,
         )
+        ajuda = tk.Menu(sobre, tearoff=0)
+        ajuda.add_command(
+            label="Enviar Email de Suporte",
+            command=self._on_support_email,
+        )
+        sobre.add_cascade(label="Preciso de ajuda", menu=ajuda)
         menu.add_cascade(label="Sobre", menu=sobre)
 
         self._master.configure(menu=menu)
@@ -172,7 +251,10 @@ class MainWindow:
             fg_color=self._theme.c("bg_card"),
             corner_radius=12,
             height=80,
+            **self._card_style(),
         )
+        self._section_cards.append(header)
+        self._accent_bar(header, "primary")
         header.pack(fill="x", pady=(0, 20))
         header.pack_propagate(False)
 
@@ -180,34 +262,42 @@ class MainWindow:
             header,
             text="SORTEIO PROFISSIONAL",
             font=(ui_font(), 28, "bold"),
-            text_color=self._theme.c("primary"),
+            text_color=self._section_accent("primary"),
         )
         title.place(relx=0.5, rely=0.5, anchor="center")
+        self._section_labels.append((title, "primary"))
+        self._accent_bar(header, "primary", top=True)
 
     def _build_sorteio_frame(self) -> None:
         frame = ctk.CTkFrame(
             self._body,
             fg_color=self._theme.c("bg_card"),
             corner_radius=12,
+            **self._card_style(),
         )
         frame.grid(
             row=0, column=0, columnspan=2,
             sticky="nsew", padx=(0, 15), pady=(0, 15),
         )
+        self._section_cards.append(frame)
+        self._accent_bar(frame, "secondary")
 
-        ctk.CTkLabel(
+        title = ctk.CTkLabel(
             frame,
             text="Configuração do Sorteio",
-            font=(ui_font(), 16, "bold"),
-            text_color=self._theme.c("primary"),
-        ).pack(anchor="w", padx=20, pady=(15, 5))
+            font=(ui_font(), 18, "bold"),
+            text_color=self._section_accent("secondary"),
+        )
+        title.pack(anchor="w", padx=20, pady=(15, 5))
+        self._section_labels.append((title, "secondary"))
+        self._accent_bar(frame, "secondary", top=True)
 
         self._mode = "numbers"
         mode_sel = ctk.CTkSegmentedButton(
             frame,
             values=["Números", "Nomes"],
             command=self._on_mode_change,
-            font=(ui_font(), 12, "bold"),
+            font=(ui_font(), 16, "bold"),
         )
         mode_sel.set("Números")
         mode_sel.pack(anchor="w", padx=20, pady=(0, 10))
@@ -225,7 +315,7 @@ class MainWindow:
         self._error_label = ctk.CTkLabel(
             frame,
             text="",
-            font=(ui_font(), 11),
+            font=(ui_font(), 15),
             text_color=self._theme.c("error"),
         )
         self._error_label.pack(anchor="w", padx=20, pady=(0, 10))
@@ -235,7 +325,7 @@ class MainWindow:
             inputs,
             width=200,
             height=38,
-            font=(ui_font(), 14),
+            font=(ui_font(), 18),
             placeholder_text="Ex: 1",
         )
         self._entry_start.grid(row=0, column=1, sticky="w", padx=(0, 20), pady=5)
@@ -243,14 +333,14 @@ class MainWindow:
         ctk.CTkLabel(
             inputs,
             text="Número Inicial:",
-            font=(ui_font(), 12),
+            font=(ui_font(), 16, "bold"),
             text_color=self._theme.c("text_secondary"),
         ).grid(row=0, column=0, sticky="w", padx=(0, 5), pady=5)
 
         ctk.CTkLabel(
             inputs,
             text="Número Final:",
-            font=(ui_font(), 12),
+            font=(ui_font(), 16, "bold"),
             text_color=self._theme.c("text_secondary"),
         ).grid(row=1, column=0, sticky="w", padx=(0, 5), pady=5)
 
@@ -258,7 +348,7 @@ class MainWindow:
             inputs,
             width=200,
             height=38,
-            font=(ui_font(), 14),
+            font=(ui_font(), 18),
             placeholder_text="Ex: 1000",
         )
         self._entry_end.grid(row=1, column=1, sticky="w", padx=(0, 20), pady=5)
@@ -271,7 +361,7 @@ class MainWindow:
         ctk.CTkLabel(
             count_frame,
             text="Números por vez:",
-            font=(ui_font(), 12),
+            font=(ui_font(), 16, "bold"),
             text_color=self._theme.c("text_secondary"),
         ).pack(side="left")
 
@@ -282,7 +372,7 @@ class MainWindow:
                 count_frame,
                 text=str(n),
                 variable=var,
-                font=(ui_font(), 12),
+                font=(ui_font(), 16, "bold"),
                 width=48,
                 checkbox_width=18,
                 checkbox_height=18,
@@ -293,7 +383,7 @@ class MainWindow:
         ctk.CTkLabel(
             inputs,
             text="Sem seleção, o sorteio gera 1 número por vez.",
-            font=(ui_font(), 10),
+            font=(ui_font(), 16, "bold"),
             text_color=self._theme.c("text_secondary"),
         ).grid(row=3, column=0, columnspan=2, sticky="w", padx=0, pady=(0, 5))
 
@@ -301,7 +391,7 @@ class MainWindow:
         tip = ctk.CTkLabel(
             panel,
             text="Digite um nome por linha ou importe um arquivo.",
-            font=(ui_font(), 12),
+            font=(ui_font(), 16, "bold"),
             text_color=self._theme.c("text_secondary"),
         )
         tip.pack(anchor="w", padx=0, pady=(0, 5))
@@ -311,22 +401,20 @@ class MainWindow:
             text="Importar Arquivo (.csv .doc .docx .pdf)",
             command=self._on_import_names,
             height=54,
-            font=(ui_font(), 12, "bold"),
-            fg_color=self._theme.c("primary"),
-            hover_color=self._theme.c("text_secondary"),
-            text_color="#ffffff",
+            font=(ui_font(), 16, "bold"),
             corner_radius=8,
         )
         self._names_import_btn.pack(anchor="w", padx=0, pady=(0, 6))
+        self._track_btn(self._names_import_btn, "btn_primary", "btn_primary_hover")
 
         self._names_text = ctk.CTkTextbox(
             panel,
             height=90,
-            font=(ui_font(), 13),
-            fg_color=self._theme.c("bg"),
+            font=(ui_font(), 17, "bold"),
+            fg_color=self._theme.c("input_bg"),
             text_color=self._theme.c("text"),
             border_width=1,
-            border_color=self._theme.c("border"),
+            border_color=self._theme.c("input_border"),
             corner_radius=8,
         )
         self._names_text.pack(fill="x", padx=0, pady=(0, 5))
@@ -335,7 +423,7 @@ class MainWindow:
         self._names_info = ctk.CTkLabel(
             panel,
             text="Nomes cadastrados: 0",
-            font=(ui_font(), 11, "bold"),
+            font=(ui_font(), 15, "bold"),
             text_color=self._theme.c("success"),
         )
         self._names_info.pack(anchor="w", padx=0, pady=(0, 5))
@@ -383,7 +471,7 @@ class MainWindow:
         ctk.CTkLabel(
             dialog,
             text="Selecione um arquivo (.csv, .doc, .docx, .pdf)",
-            font=(ui_font(), 18, "bold"),
+            font=(ui_font(), 20, "bold"),
             text_color=self._theme.c("primary"),
         ).pack(anchor="w", padx=15, pady=(15, 5))
 
@@ -405,7 +493,8 @@ class MainWindow:
             text="Início",
             width=70, height=28,
             font=(ui_font(), 11),
-            fg_color=self._theme.c("primary"),
+            fg_color=self._theme.c("btn_primary"),
+            text_color=self._theme.c("btn_text"),
             command=go_home,
         ).pack(side="left", padx=(0, 5))
 
@@ -414,7 +503,8 @@ class MainWindow:
             text="Subir",
             width=70, height=28,
             font=(ui_font(), 11),
-            fg_color=self._theme.c("text_secondary"),
+            fg_color=self._theme.c("btn_neutral"),
+            text_color=self._theme.c("btn_text"),
             command=go_up,
         ).pack(side="left")
 
@@ -564,7 +654,8 @@ class MainWindow:
             text="Cancelar",
             width=120, height=36,
             font=(ui_font(), 12),
-            fg_color=self._theme.c("text_secondary"),
+            fg_color=self._theme.c("btn_neutral"),
+            text_color=self._theme.c("btn_text"),
             command=dialog.destroy,
         ).pack(side="right")
 
@@ -580,9 +671,12 @@ class MainWindow:
             fg_color=self._theme.c("bg_card"),
             corner_radius=12,
             height=60,
+            **self._card_style(),
         )
         frame.pack(fill="x", pady=(0, 15))
         frame.pack_propagate(False)
+        self._section_cards.append(frame)
+        self._accent_bar(frame, "accent")
 
         stats = [
             ("Sorteados", "0", "_lbl_sorted"),
@@ -606,10 +700,13 @@ class MainWindow:
                 col,
                 text=value,
                 font=(ui_font(), 18, "bold"),
-                text_color=self._theme.c("primary"),
+                text_color=self._section_accent("accent"),
             )
             lbl.pack()
             setattr(self, attr, lbl)
+            self._section_labels.append((lbl, "accent"))
+
+        self._accent_bar(frame, "accent", top=True)
 
     def _build_buttons(self) -> None:
         grid = ctk.CTkFrame(
@@ -631,12 +728,10 @@ class MainWindow:
             width=160,
             height=42,
             font=(ui_font(), 15, "bold"),
-            fg_color=self._theme.c("primary"),
-            hover_color=self._theme.c("text_secondary"),
-            text_color="#ffffff",
             corner_radius=8,
         )
         self._btn_iniciar.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
+        self._track_btn(self._btn_iniciar, "btn_primary", "btn_primary_hover")
 
         self._btn_limpar = ctk.CTkButton(
             grid,
@@ -645,12 +740,10 @@ class MainWindow:
             width=160,
             height=42,
             font=(ui_font(), 15, "bold"),
-            fg_color=self._theme.c("warning"),
-            hover_color=self._theme.c("text_secondary"),
-            text_color="#ffffff",
             corner_radius=8,
         )
         self._btn_limpar.grid(row=1, column=0, padx=4, pady=4, sticky="ew")
+        self._track_btn(self._btn_limpar, "btn_warning", "btn_warning_hover")
 
         self._sound_var = tk.BooleanVar(
             master=self._master,
@@ -663,13 +756,15 @@ class MainWindow:
             width=130,
             height=38,
             font=(ui_font(), 15, "bold"),
-            fg_color=self._theme.c("success") if self._sound_var.get() else self._theme.c("text_secondary"),
-            hover_color=self._theme.c("text_secondary"),
-            text_color="#ffffff",
             corner_radius=8,
         )
         sound_btn.grid(row=0, column=1, padx=4, pady=4, sticky="ew")
         self._btn_sound = sound_btn
+        self._track_btn(
+            sound_btn,
+            "btn_success" if self._sound_var.get() else "btn_neutral",
+            "btn_success_hover" if self._sound_var.get() else "btn_neutral_hover",
+        )
 
         grid.grid_columnconfigure((0, 1), weight=1)
 
@@ -680,12 +775,10 @@ class MainWindow:
             width=130,
             height=38,
             font=(ui_font(), 14, "bold"),
-            fg_color=self._theme.c("text_secondary"),
-            hover_color=self._theme.c("primary"),
-            text_color="#ffffff",
             corner_radius=8,
         )
         self._btn_settings.grid(row=1, column=1, padx=4, pady=4, sticky="ew")
+        self._track_btn(self._btn_settings, "btn_neutral", "btn_neutral_hover")
 
         self._btn_export = ctk.CTkButton(
             grid,
@@ -694,12 +787,10 @@ class MainWindow:
             width=130,
             height=38,
             font=(ui_font(), 14, "bold"),
-            fg_color=self._theme.c("text_secondary"),
-            hover_color=self._theme.c("primary"),
-            text_color="#ffffff",
             corner_radius=8,
         )
         self._btn_export.grid(row=2, column=0, padx=4, pady=4, sticky="ew")
+        self._track_btn(self._btn_export, "btn_neutral", "btn_neutral_hover")
 
         self._btn_sair = ctk.CTkButton(
             grid,
@@ -708,38 +799,42 @@ class MainWindow:
             width=130,
             height=38,
             font=(ui_font(), 14, "bold"),
-            fg_color=self._theme.c("error"),
-            hover_color=self._theme.c("text_secondary"),
-            text_color="#ffffff",
             corner_radius=8,
         )
         self._btn_sair.grid(row=2, column=1, padx=4, pady=4, sticky="ew")
+        self._track_btn(self._btn_sair, "btn_error", "btn_error_hover")
 
     def _build_history(self) -> None:
         frame = ctk.CTkFrame(
             self._body,
             fg_color=self._theme.c("bg_card"),
             corner_radius=12,
+            **self._card_style(),
         )
         frame.grid(
             row=0, column=2, rowspan=2, columnspan=2,
             sticky="nsew",
         )
+        self._section_cards.append(frame)
+        self._accent_bar(frame, "success")
 
-        ctk.CTkLabel(
+        title = ctk.CTkLabel(
             frame,
             text="Histórico de Sorteios",
             font=(ui_font(), 14, "bold"),
-            text_color=self._theme.c("primary"),
-        ).pack(anchor="w", padx=20, pady=(12, 8))
+            text_color=self._section_accent("success"),
+        )
+        title.pack(anchor="w", padx=20, pady=(12, 8))
+        self._section_labels.append((title, "success"))
+        self._accent_bar(frame, "success", top=True)
 
         self._history_text = ctk.CTkTextbox(
             frame,
             font=(ui_font(), 13, "bold"),
-            fg_color=self._theme.c("bg"),
+            fg_color=self._theme.c("input_bg"),
             text_color=self._theme.c("text"),
             border_width=1,
-            border_color=self._theme.c("border"),
+            border_color=self._theme.c("input_border"),
             corner_radius=8,
             height=180,
         )
@@ -755,25 +850,26 @@ class MainWindow:
             self._on_new_click()
 
     def _on_clear_toggle(self) -> None:
-        if self._clear_state == "clear":
-            self._on_clear_click()
-            self._clear_state = "reset"
-            self._btn_limpar.configure(
-                text="Resetar Tudo",
-                fg_color=self._theme.c("error"),
-            )
-        else:
-            self._on_reset_click()
-            self._clear_state = "clear"
-            self._btn_limpar.configure(
-                text="Limpar Sorteios",
-                fg_color=self._theme.c("warning"),
-            )
-            self._btn_iniciar.configure(
-                text="Iniciar Sorteio",
-                fg_color=self._theme.c("primary"),
-            )
-            self._draw_state = "start"
+        """Limpa e reinicia tudo em um único clique, sem confirmação."""
+        self._engine.reset()
+        self._history.clear()
+        self._entry_start.delete(0, "end")
+        self._entry_end.delete(0, "end")
+        if self._mode == "names":
+            self._names_text.delete("1.0", "end")
+            self._stored_names = []
+            self._names_info.configure(text="Nomes cadastrados: 0")
+        self._error_label.configure(text="")
+        self._update_status()
+        self._update_history_display()
+        self._btn_iniciar.configure(text="Iniciar Sorteio")
+        self._set_btn_theme(self._btn_iniciar, "btn_primary", "btn_primary_hover")
+        self._draw_state = "start"
+        self._clear_state = "clear"
+        self._btn_limpar.configure(text="Limpar Sorteios")
+        self._sound.play("click")
+        if self._on_reset:
+            self._on_reset()
 
     # ── Event handlers ──
 
@@ -784,7 +880,11 @@ class MainWindow:
         self._settings.set("sound", "enabled", enabled)
         self._btn_sound.configure(
             text="Som: Ligado" if enabled else "Som: Desligado",
-            fg_color=self._theme.c("success") if enabled else self._theme.c("error"),
+        )
+        self._set_btn_theme(
+            self._btn_sound,
+            "btn_success" if enabled else "btn_error",
+            "btn_success_hover" if enabled else "btn_error_hover",
         )
         if enabled:
             self._sound.play("click")
@@ -848,22 +948,18 @@ class MainWindow:
         drawn = self._draw_numbers(1)
         if drawn and self._on_start_draw:
             self._draw_state = "new"
-            self._btn_iniciar.configure(
-                text="Sortear Próximo",
-                fg_color=self._theme.c("accent"),
-            )
+            self._btn_iniciar.configure(text="Sortear Próximo")
+            self._set_btn_theme(self._btn_iniciar, "btn_start", "btn_start_hover")
             self._on_start_draw(drawn)
 
     def _on_new_names(self) -> None:
         if self._engine.state == "completed":
             self._error_label.configure(
-                text="Todos os nomes foram sorteados. Use 'Resetar Tudo' para reiniciar."
+                text="Todos os nomes foram sorteados. Use 'Limpar Sorteios' para reiniciar."
             )
             self._draw_state = "start"
-            self._btn_iniciar.configure(
-                text="Iniciar Sorteio",
-                fg_color=self._theme.c("primary"),
-            )
+            self._btn_iniciar.configure(text="Iniciar Sorteio")
+            self._set_btn_theme(self._btn_iniciar, "btn_primary", "btn_primary_hover")
             return
 
         if self._engine.state == "idle":
@@ -878,10 +974,8 @@ class MainWindow:
             return
 
         self._draw_state = "start"
-        self._btn_iniciar.configure(
-            text="Iniciar Sorteio",
-            fg_color=self._theme.c("primary"),
-        )
+        self._btn_iniciar.configure(text="Iniciar Sorteio")
+        self._set_btn_theme(self._btn_iniciar, "btn_primary", "btn_primary_hover")
         if self._on_new_draw:
             self._on_new_draw()
 
@@ -942,10 +1036,8 @@ class MainWindow:
         numbers = self._draw_numbers(self._numbers_per_draw())
         if numbers and self._on_start_draw:
             self._draw_state = "new"
-            self._btn_iniciar.configure(
-                text="Novo Sorteio",
-                fg_color=self._theme.c("accent"),
-            )
+            self._btn_iniciar.configure(text="Novo Sorteio")
+            self._set_btn_theme(self._btn_iniciar, "btn_start", "btn_start_hover")
             self._on_start_draw(numbers)
 
     def _on_new_click(self) -> None:
@@ -955,13 +1047,11 @@ class MainWindow:
 
         if self._engine.state == "completed":
             self._error_label.configure(
-                text="Sorteio encerrado. Use 'Resetar Tudo' para reiniciar."
+                text="Sorteio encerrado. Use 'Limpar Sorteios' para reiniciar."
             )
             self._draw_state = "start"
-            self._btn_iniciar.configure(
-                text="Iniciar Sorteio",
-                fg_color=self._theme.c("primary"),
-            )
+            self._btn_iniciar.configure(text="Iniciar Sorteio")
+            self._set_btn_theme(self._btn_iniciar, "btn_primary", "btn_primary_hover")
             return
 
         if self._engine.state == "idle":
@@ -977,10 +1067,8 @@ class MainWindow:
             return
 
         self._draw_state = "start"
-        self._btn_iniciar.configure(
-            text="Iniciar Sorteio",
-            fg_color=self._theme.c("primary"),
-        )
+        self._btn_iniciar.configure(text="Iniciar Sorteio")
+        self._set_btn_theme(self._btn_iniciar, "btn_primary", "btn_primary_hover")
         if self._on_new_draw:
             self._on_new_draw()
 
@@ -1075,9 +1163,42 @@ class MainWindow:
             width=100,
             height=32,
             font=(ui_font(), 12, "bold"),
-            fg_color=self._theme.c("primary"),
+            fg_color=self._theme.c("btn_primary"),
+            text_color=self._theme.c("btn_text"),
             command=dialog.destroy,
         ).pack(pady=(25, 20))
+
+    def _on_support_email(self) -> None:
+        subject = f"[Suporte] Sorteio Profissional v{APP_VERSION}".replace(" ", "%20")
+        try:
+            webbrowser.open(
+                "mailto:" + SUPPORT_EMAIL + "?subject=" + subject
+            )
+        except Exception:
+            dialog = ctk.CTkToplevel(self._master)
+            dialog.title("Preciso de ajuda")
+            dialog.configure(fg_color=self._theme.c("bg"))
+            dialog.resizable(False, False)
+            dialog.geometry(
+                f"480x200+{self._master.winfo_x() + 100}+{self._master.winfo_y() + 180}"
+            )
+            dialog.grab_set()
+            ctk.CTkLabel(
+                dialog,
+                text=f"Envie um email para:\n{SUPPORT_EMAIL}",
+                font=(ui_font(), 13),
+                text_color=self._theme.c("text"),
+            ).pack(pady=(40, 20))
+            ctk.CTkButton(
+                dialog,
+                text="OK",
+                width=100,
+                height=32,
+                font=(ui_font(), 12, "bold"),
+                fg_color=self._theme.c("btn_primary"),
+                text_color=self._theme.c("btn_text"),
+                command=dialog.destroy,
+            ).pack()
 
     def _on_settings_click(self) -> None:
         if self._on_settings:
@@ -1106,6 +1227,41 @@ class MainWindow:
     def refresh_theme(self) -> None:
         self._master.configure(fg_color=self._theme.c("bg"))
         self._container.configure(fg_color=self._theme.c("bg"))
+        light = self._theme.theme_name == "light"
+        for card in getattr(self, "_section_cards", []):
+            card.configure(fg_color=self._theme.c("bg_card"))
+            if light:
+                card.configure(
+                    border_width=1,
+                    border_color=self._theme.c("border"),
+                )
+            else:
+                card.configure(border_width=0)
+        for bar, token in getattr(self, "_accent_bars", []):
+            color = (
+                self._theme.c(token)
+                if self._theme.theme_name == "light"
+                else self._theme.c("bg_card")
+            )
+            bar.configure(fg_color=color)
+        for label, token in getattr(self, "_section_labels", []):
+            label.configure(text_color=self._section_accent(token))
+        for box in (
+            getattr(self, "_names_text", None),
+            getattr(self, "_history_text", None),
+        ):
+            if box is not None:
+                box.configure(
+                    fg_color=self._theme.c("input_bg"),
+                    text_color=self._theme.c("text"),
+                    border_color=self._theme.c("input_border"),
+                )
+        for btn, fg_token, hover_token in getattr(self, "_dynamic_buttons", []):
+            btn.configure(
+                fg_color=self._theme.c(btn._fg_token),
+                hover_color=self._theme.c(btn._hover_token),
+                text_color=self._theme.c("btn_text"),
+            )
 
     def _update_status(self) -> None:
         self._lbl_sorted.configure(

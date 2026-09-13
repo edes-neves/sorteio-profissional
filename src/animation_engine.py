@@ -321,7 +321,7 @@ class AnimationEngine:
                     w // 2, h // 2,
                     text=txt,
                     font=(self._number_font, font_size, "normal"),
-                    fill=self._theme.c("text"),
+                    fill=self._theme.public("text"),
                     tags="number_display",
                 )
             return
@@ -346,7 +346,7 @@ class AnimationEngine:
     def _draw_gold_text(
         self, text: str, cx: int, cy: int, font_size: int, tag: str
     ) -> None:
-        """Draws the gold text with an embossed shadow (names variant)."""
+        """Draws the gold text with a clean embossed shadow (names variant)."""
         canvas = self._canvas
         canvas.create_text(
             cx + 5, cy + 7,
@@ -459,7 +459,7 @@ class AnimationEngine:
                     w // 2, h // 2,
                     text=digits,
                     font=(self._number_font, font_size, "normal"),
-                    fill=self._theme.c("text"),
+                    fill=self._theme.public("text"),
                     tags="number_display",
                 )
             return
@@ -583,7 +583,7 @@ class AnimationEngine:
         w, h = self._canvas_size()
         canvas.create_rectangle(
             0, 0, w, h,
-            fill=self._theme.c("bg"),
+            fill=self._theme.public("bg"),
             outline="",
             tags="bg",
         )
@@ -591,7 +591,7 @@ class AnimationEngine:
         for _ in range(30):
             x = random.randint(0, w)
             y = random.randint(0, h)
-            color = self._theme.c("primary")
+            color = self._theme.public("primary")
             canvas.create_oval(
                 x, y, x + 2, y + 2,
                 fill=color,
@@ -639,15 +639,7 @@ class AnimationEngine:
         if self._is_names:
             names = [str(n) for n in numbers]
             if len(names) == 1:
-                canvas = self._canvas
                 w, h = self._canvas_size()
-                canvas.create_text(
-                    w // 2, h // 2,
-                    text=names[0],
-                    font=(self._number_font, font_size + 18, "normal"),
-                    fill=WINNER_GLOW_SOFT,
-                    tags="winner_glow",
-                )
                 self._draw_gold_text(
                     names[0], w // 2, h // 2, font_size, "winner_number"
                 )
@@ -720,10 +712,10 @@ class AnimationEngine:
 
     def _ambient_colors(self) -> list[str]:
         return [
-            self._theme.c("primary"),
-            self._theme.c("secondary"),
-            self._theme.c("accent"),
-            self._theme.c("success"),
+            self._theme.public("primary"),
+            self._theme.public("secondary"),
+            self._theme.public("accent"),
+            self._theme.public("success"),
         ]
 
     def _spawn_win_particles(self) -> None:
@@ -740,15 +732,17 @@ class AnimationEngine:
             self._particles.append(Particle(x, y, color, random.uniform(1, 3)))
 
     def _spawn_ambient_particle(self) -> Particle:
-        """Spawns a single ambient particle rising from the bottom edge,
-        keeping a continuous light show behind the winning number."""
+        """Spawns a single ambient particle anywhere on the screen (whole
+        telão), keeping a continuous light show of rising dust behind the
+        content. Spawns across the full height so the effect is visible on
+        the entire public monitor, not only on the bottom."""
         w, h = self._canvas_size()
         x = random.uniform(0, w)
-        y = random.uniform(h * 0.55, h + 10)
+        y = random.uniform(0, h)
         return Particle(
             x, y,
             random.choice(self._ambient_colors()),
-            random.uniform(1.0, 2.2),
+            random.uniform(1.2, 3.0),
         )
 
     def _spawn_firework(self) -> None:
@@ -774,7 +768,7 @@ class AnimationEngine:
         self._particles = [p for p in self._particles if p.update()]
 
         if self._ambient_active:
-            while len(self._particles) < 35:
+            while len(self._particles) < 100:
                 self._particles.append(self._spawn_ambient_particle())
 
             if self._winner_showing:

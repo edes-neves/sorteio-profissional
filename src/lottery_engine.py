@@ -35,13 +35,18 @@ class LotteryEngine:
         self._state = LotteryState.READY
 
     def configure_names(self, names: list) -> None:
-        """Configures the engine for a names raffle from a list of names."""
+        """Configures the engine for a names raffle from a list of names.
+
+        Names are stored fully uppercase (Unicode-aware, so "José" becomes
+        "JOSÉ"), keeping the telão and the history with the same canonical
+        look regardless of how the list was typed/imported.
+        """
         self.reset()
         self._mode = "names"
         self._start = 1
         self._end = len(names)
         self._total_numbers = len(names)
-        self._available = list(names)
+        self._available = [str(n).upper() for n in names]
         random.shuffle(self._available)
         self._state = LotteryState.READY
 

@@ -35,6 +35,7 @@ python main.py
 - Importação de listas de nomes a partir de `.csv`, `.txt`, `.doc`, `.docx`, `.pdf` e `.odt`
   - Diálogo de importação próprio com navegação por pastas (clique simples importa)
 - Tela pública com animações neon em segundo monitor
+- **Tela pública personalizável** — cor de fundo, cores de textos/títulos e transparência configuráveis (menu **Configurações** → **Tela Pública**)
 - Sorteio sem repetição com algoritmo eficiente
 - Animações com desaceleração progressiva
 - Efeitos de partículas e glow no resultado vencedor
@@ -42,9 +43,35 @@ python main.py
 - Configurações persistidas em JSON
 - Exportação de histórico em CSV/TXT
 - Detecção automática de monitores
+- **Verificação automática de atualizações** — ao abrir, o app consulta o GitHub; se houver versão nova, mostra as melhorias e oferece o download para a pasta Downloads
+- **Menu "Preciso de ajuda"** (menu **Sobre**) — abre um email de suporte para o desenvolvedor
 - Splash screen de carregamento
 - Atalhos de teclado
 - Tema escuro com detalhes neon (alternável com Ctrl+T)
+
+## Menu Exibir
+
+O menu **Exibir** na parte superior da janela principal reúne as opções de visualização:
+
+- **Alternar Tema** (Ctrl+T) — alterna entre os temas escuro e claro
+- **Tela Cheia (F11)** — ativa/desativa a tela cheia da tela pública
+- **Minimizar/Restaurar Tela Pública** (Ctrl+M) — mostra ou oculta a tela pública
+
+No menu **Sobre** há ainda a opção **Preciso de ajuda**, que abre um email de
+suporte para `nevestecnologias@gmail.com`.
+
+## Atualização automática
+
+Ao abrir o Sorteio Profissional, ele verifica automaticamente no GitHub se
+existe uma versão mais nova:
+
+1. Se houver, uma janela avisa com a **descrição das melhorias** da nova versão.
+2. Ao clicar em **"Sim, baixar"**, o novo AppImage é baixado para a **pasta
+   Downloads** com barra de progresso.
+3. Ao terminar, são exibidas as **instruções para instalação** da nova versão.
+
+A verificação é silenciosa quando não há atualização (ou sem internet), e não
+atrapalha o uso do programa.
 
 ## Uso do sorteio de nomes
 
@@ -93,6 +120,7 @@ Sorteio/
     ├── history_manager.py  # Histórico e exportação
     ├── font_manager.py     # Gerenciamento de fontes
     ├── validator.py        # Validação de entrada
+    ├── updater.py          # Verificação de atualizações no GitHub
     └── splash_screen.py    # Tela de abertura
 ```
 

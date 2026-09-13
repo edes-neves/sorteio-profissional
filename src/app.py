@@ -1,6 +1,8 @@
 import os
+import re
 from pathlib import Path
 import tkinter as tk
+from tkinter import colorchooser
 from typing import Optional
 
 import customtkinter as ctk
@@ -15,6 +17,7 @@ from src.settings_manager import SettingsManager
 from src.sound_manager import SoundManager
 from src.splash_screen import SplashScreen
 from src.theme_manager import ThemeManager
+from src.updater import Updater
 
 
 class App:
@@ -33,6 +36,7 @@ class App:
         self._main_window: Optional[MainWindow] = None
         self._public_window: Optional[PublicWindow] = None
         self._icon_images: list[tk.PhotoImage] = []
+        self._updater: Optional[Updater] = None
 
     def _load_window_icon(self) -> None:
         """Loads the app icon and sets it as the default for all windows.
@@ -106,13 +110,16 @@ class App:
         self._setup_public_display()
         self._setup_keyboard_shortcuts()
 
+        self._updater = Updater(self._root, self._theme)
+        self._root.after(2500, self._updater.check_for_updates)
+
         self._root.after(150, self._root.lift)
         self._root.after(300, self._root.focus_force)
 
         self._root.protocol("WM_DELETE_WINDOW", self._on_quit)
         self._root.mainloop()
 
-    def _setup_public_display(self) -> None:
+    def _setup_public_display(self, confirm: bool = True) -> None:
         use_public = False
         public_monitor = None
 
@@ -128,17 +135,20 @@ class App:
                 y=public_monitor.y,
                 w=public_monitor.width,
                 h=public_monitor.height,
-                fullscreen=self._settings.get("display", "fullscreen") or False,
+                fullscreen=True,
             )
         else:
-            answer = tk.messagebox.askyesno(
-                title="Monitor Público",
-                message="Nenhum monitor secundário detectado.\n\n"
-                        "Deseja utilizar apenas uma tela?\n\n"
-                        "Sim: O sorteio será exibido nesta janela.\n"
-                        "Não: O sorteio funcionará apenas no modo operador "
-                        "(sem exibição pública).",
-            )
+            if confirm:
+                answer = tk.messagebox.askyesno(
+                    title="Monitor Público",
+                    message="Nenhum monitor secundário detectado.\n\n"
+                            "Deseja utilizar apenas uma tela?\n\n"
+                            "Sim: O sorteio será exibido nesta janela.\n"
+                            "Não: O sorteio funcionará apenas no modo operador "
+                            "(sem exibição pública).",
+                )
+            else:
+                answer = True
             if answer:
                 self._public_window = PublicWindow(self._theme, self._settings)
                 self._public_window.create(
@@ -189,7 +199,7 @@ class App:
     def _on_reset(self) -> None:
         if self._public_window and self._public_window.is_open:
             self._public_window.close()
-            self._setup_public_display()
+            self._setup_public_display(confirm=False)
 
     def _on_clear(self) -> None:
         if self._public_window and self._public_window.is_open:
@@ -242,7 +252,8 @@ class App:
             text="Início",
             width=70, height=28,
             font=(ui_font(), 11),
-            fg_color=self._theme.c("primary"),
+            fg_color=self._theme.c("btn_primary"),
+            text_color=self._theme.c("btn_text"),
             command=go_home,
         ).pack(side="left", padx=(0, 5))
 
@@ -251,7 +262,8 @@ class App:
             text="Subir",
             width=70, height=28,
             font=(ui_font(), 11),
-            fg_color=self._theme.c("text_secondary"),
+            fg_color=self._theme.c("btn_neutral"),
+            text_color=self._theme.c("btn_text"),
             command=go_up,
         ).pack(side="left")
 
@@ -397,7 +409,8 @@ class App:
             text="Salvar",
             width=120, height=36,
             font=(ui_font(), 12, "bold"),
-            fg_color=self._theme.c("primary"),
+            fg_color=self._theme.c("btn_primary"),
+            text_color=self._theme.c("btn_text"),
             command=save,
         ).pack(side="right", padx=(10, 0))
 
@@ -406,7 +419,8 @@ class App:
             text="Cancelar",
             width=120, height=36,
             font=(ui_font(), 12),
-            fg_color=self._theme.c("text_secondary"),
+            fg_color=self._theme.c("btn_neutral"),
+            text_color=self._theme.c("btn_text"),
             command=dialog.destroy,
         ).pack(side="right")
 
@@ -468,113 +482,194 @@ class App:
                 )
 
     def _show_settings_dialog(self) -> None:
-        dialog = ctk.CTkToplevel(self._root)
-        dialog.title("Configurações")
-        dialog.geometry("500x500")
-        dialog.configure(fg_color=self._theme.c("bg"))
-        dialog.resizable(False, False)
-        dialog.grab_set()
+            dialog = ctk.CTkToplevel(self._root)
+            dialog.title("Configurações")
+            dialog.configure(fg_color=self._theme.c("bg"))
+            dialog.resizable(True, True)
+            dialog.grab_set()
 
-        x = self._root.winfo_x() + 100
-        y = self._root.winfo_y() + 100
-        dialog.geometry(f"500x500+{x}+{y}")
+            x = self._root.winfo_x() + 100
+            y = self._root.winfo_y() + 100
+            sw = int(self._settings.get("ui", "settings_w") or 820)
+            sh = int(self._settings.get("ui", "settings_h") or 720)
+            dialog.geometry(f"{sw}x{sh}+{x}+{y}")
 
-        main_frame = ctk.CTkScrollableFrame(
-            dialog,
-            fg_color="transparent",
-        )
-        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
-
-        ctk.CTkLabel(
-            main_frame,
-            text="Configurações",
-            font=(ui_font(), 20, "bold"),
-            text_color=self._theme.c("primary"),
-        ).pack(anchor="w", pady=(0, 15))
-
-        sections = [
-            ("Animação", [
-                ("Duração (s)",
-                 str(self._settings.get("animation", "duration") or 1.2)),
-                ("Velocidade Inicial (ms)",
-                 str(self._settings.get("animation", "initial_speed") or 30)),
-                ("Velocidade Mínima (ms)",
-                 str(self._settings.get("animation", "min_speed") or 200)),
-            ]),
-            ("Áudio", [
-                ("Som Ativado",
-                 "Sim" if self._settings.get("sound", "enabled") else "Sim"),
-                ("Volume",
-                 str(self._settings.get("sound", "volume") or 0.5)),
-            ]),
-            ("Monitor", [
-                ("Tela Cheia",
-                 "Sim" if self._settings.get("display", "fullscreen") else "Sim"),
-                ("Transparência da Tela",
-                 str(self._settings.get("display", "public_alpha") or 1.0)),
-            ]),
-        ]
-
-        entries = {}
-
-        for section_name, fields in sections:
-            section_frame = ctk.CTkFrame(
-                main_frame,
-                fg_color=self._theme.c("bg_card"),
-                corner_radius=8,
+            main_frame = ctk.CTkScrollableFrame(
+                dialog,
+                fg_color="transparent",
             )
-            section_frame.pack(fill="x", pady=(0, 10))
+            main_frame.pack(fill="both", expand=True, padx=15, pady=15)
 
             ctk.CTkLabel(
-                section_frame,
-                text=section_name,
-                font=(ui_font(), 14, "bold"),
+                main_frame,
+                text="Configurações",
+                font=(ui_font(), 20, "bold"),
                 text_color=self._theme.c("primary"),
-            ).pack(anchor="w", padx=15, pady=(10, 5))
+            ).pack(anchor="w", pady=(0, 15))
 
-            for field_name, default in fields:
-                row = ctk.CTkFrame(section_frame, fg_color="transparent")
-                row.pack(fill="x", padx=15, pady=3)
+            sections = [
+                ("Animação", [
+                    ("Duração (s)",
+                     str(self._settings.get("animation", "duration") or 0.6)),
+                    ("Velocidade Inicial (ms)",
+                     str(self._settings.get("animation", "initial_speed") or 30)),
+                    ("Velocidade Mínima (ms)",
+                     str(self._settings.get("animation", "min_speed") or 200)),
+                ]),
+                ("Áudio", [
+                    ("Som Ativado",
+                     "Sim" if self._settings.get("sound", "enabled") else "Não"),
+                    ("Volume",
+                     str(self._settings.get("sound", "volume") or 0.5)),
+                ]),
+                ("Tela Pública", [
+                    ("Tela Transparente",
+                     "Sim" if self._settings.get("display", "public_transparent") is not False else "Não"),
+                    ("Transparência da Tela",
+                     str(self._settings.get("display", "public_alpha") or 1.0)),
+                    ("Cor do Fundo",
+                     str(self._settings.get("display", "public_bg") or "")),
+                    ("Cor dos Títulos",
+                     str(self._settings.get("display", "public_primary") or "")),
+                    ("Cor dos Textos",
+                     str(self._settings.get("display", "public_text") or "")),
+                    ("Cor dos Textos Secundários",
+                     str(self._settings.get("display", "public_text_secondary") or "")),
+                ]),
+            ]
+
+            entries = {}
+
+            for section_name, fields in sections:
+                section_frame = ctk.CTkFrame(
+                    main_frame,
+                    fg_color=self._theme.c("bg_card"),
+                    corner_radius=8,
+                )
+                section_frame.pack(fill="x", pady=(0, 10))
 
                 ctk.CTkLabel(
-                    row,
-                    text=field_name,
-                    font=(ui_font(), 12),
-                    text_color=self._theme.c("text_secondary"),
-                ).pack(side="left")
+                    section_frame,
+                    text=section_name,
+                    font=(ui_font(), 16, "bold"),
+                    text_color=self._theme.c("primary"),
+                ).pack(anchor="w", padx=15, pady=(10, 5))
 
-                entry = ctk.CTkEntry(
-                    row,
-                    width=150,
-                    height=30,
-                    font=(ui_font(), 12),
-                )
-                entry.insert(0, default)
-                entry.pack(side="right")
-                entries[f"{section_name}:{field_name}"] = entry
+                for field_name, default in fields:
+                    row = ctk.CTkFrame(section_frame, fg_color="transparent")
+                    row.pack(fill="x", padx=15, pady=3)
 
-        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        btn_frame.pack(fill="x", pady=(10, 0))
+                    ctk.CTkLabel(
+                        row,
+                        text=field_name,
+                        font=(ui_font(), 16),
+                        text_color=self._theme.c("text_secondary"),
+                    ).pack(side="left")
 
-        ctk.CTkButton(
-            btn_frame,
-            text="Salvar",
-            command=lambda: self._save_settings(dialog, entries),
-            width=120,
-            height=36,
-            font=(ui_font(), 12, "bold"),
-            fg_color=self._theme.c("primary"),
-        ).pack(side="right", padx=(10, 0))
+                    COLOR_DEFAULTS = {
+                        "Cor do Fundo": "#050816",
+                        "Cor dos Títulos": "#00d4ff",
+                        "Cor dos Textos": "#ffffff",
+                        "Cor dos Textos Secundários": "#8892b0",
+                    }
 
-        ctk.CTkButton(
-            btn_frame,
-            text="Cancelar",
-            command=dialog.destroy,
-            width=120,
-            height=36,
-            font=(ui_font(), 12),
-            fg_color=self._theme.c("text_secondary"),
-        ).pack(side="right")
+                    is_color = field_name.startswith("Cor ")
+                    entry = ctk.CTkEntry(
+                        row,
+                        width=180,
+                        height=30,
+                        font=(ui_font(), 16),
+                        placeholder_text=(
+                            COLOR_DEFAULTS[field_name] if is_color else ""
+                        ),
+                    )
+                    entry.insert(0, default)
+                    entry.pack(side="right")
+                    entries[f"{section_name}:{field_name}"] = entry
+
+                    if is_color:
+                        ctk.CTkButton(
+                            row,
+                            text="Escolher...",
+                            width=90,
+                            height=30,
+                            font=(ui_font(), 13, "bold"),
+                            fg_color=self._theme.c("btn_primary"),
+                            text_color=self._theme.c("btn_text"),
+                            command=lambda e=entry: self._pick_color(e),
+                        ).pack(side="right", padx=(5, 8))
+                        ctk.CTkButton(
+                            row,
+                            text="Padrão",
+                            width=70,
+                            height=30,
+                            font=(ui_font(), 13),
+                            fg_color=self._theme.c("btn_neutral"),
+                            text_color=self._theme.c("btn_text"),
+                            command=lambda e=entry: e.delete(0, "end"),
+                        ).pack(side="right", padx=(0, 8))
+
+            btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+            btn_frame.pack(fill="x", pady=(10, 0))
+
+            ctk.CTkButton(
+                btn_frame,
+                text="Salvar",
+                command=lambda: self._save_settings(dialog, entries),
+                width=120,
+                height=36,
+                font=(ui_font(), 16, "bold"),
+                fg_color=self._theme.c("btn_primary"),
+                text_color=self._theme.c("btn_text"),
+            ).pack(side="right", padx=(10, 0))
+
+            ctk.CTkButton(
+                btn_frame,
+                text="Cancelar",
+                command=lambda: self._close_settings_dialog(dialog),
+                width=120,
+                height=36,
+                font=(ui_font(), 16),
+                fg_color=self._theme.c("btn_neutral"),
+                text_color=self._theme.c("btn_text"),
+            ).pack(side="right")
+
+    def _pick_color(self, entry: ctk.CTkEntry) -> None:
+        initial = entry.get().strip()
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", initial):
+            initial = None
+        dialog = entry.winfo_toplevel()
+        dialog.lift()
+        dialog.focus_force()
+        try:
+            dialog.attributes("-topmost", True)
+            dialog.update_idletasks()
+        except tk.TclError:
+            pass
+        try:
+            _rgb, hexv = colorchooser.askcolor(color=initial, parent=dialog)
+        finally:
+            try:
+                dialog.attributes("-topmost", False)
+            except tk.TclError:
+                pass
+        if hexv:
+            entry.delete(0, "end")
+            entry.insert(0, hexv)
+
+    def _remember_settings_size(self, dialog: ctk.CTkToplevel) -> None:
+        try:
+            w = dialog.winfo_width()
+            h = dialog.winfo_height()
+            if w > 150 and h > 150:
+                self._settings.set("ui", "settings_w", w)
+                self._settings.set("ui", "settings_h", h)
+        except Exception:
+            pass
+
+    def _close_settings_dialog(self, dialog: ctk.CTkToplevel) -> None:
+        self._remember_settings_size(dialog)
+        dialog.destroy()
 
     def _save_settings(
         self,
@@ -602,19 +697,37 @@ class App:
                 "sound", "enabled",
                 entries["Áudio:Som Ativado"].get().lower() == "sim"
             )
-            self._settings.set(
-                "display", "fullscreen",
-                entries["Monitor:Tela Cheia"].get().lower() == "sim"
-            )
-            alpha = float(entries["Monitor:Transparência da Tela"].get())
+            alpha = float(entries["Tela Pública:Transparência da Tela"].get())
             if not 0.2 <= alpha <= 1.0:
                 raise ValueError("Transparência deve estar entre 0.2 e 1.0")
             self._settings.set("display", "public_alpha", alpha)
+
+            transparent = (
+                entries["Tela Pública:Tela Transparente"].get().strip().lower() == "sim"
+            )
+            self._settings.set("display", "public_transparent", transparent)
+
+            for field_key, field_label in (
+                ("public_bg", "Cor do Fundo"),
+                ("public_primary", "Cor dos Títulos"),
+                ("public_text", "Cor dos Textos"),
+                ("public_text_secondary", "Cor dos Textos Secundários"),
+            ):
+                color = entries[f"Tela Pública:{field_label}"].get().strip()
+                if color and not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                    raise ValueError(
+                        f"Cor inválida em '{field_label}'. "
+                        "Use o formato #RRGGBB (ex.: #000000) ou deixe "
+                        "vazio para o padrão transparente."
+                    )
+                self._settings.set("display", field_key, color)
 
             self._sound.volume = self._settings.get("sound", "volume") or 0.5
             self._sound.enabled = self._settings.get("sound", "enabled") or False
             if self._public_window and self._public_window.is_open:
                 self._public_window.set_alpha(alpha)
+                self._public_window.refresh_public()
+            self._remember_settings_size(dialog)
             dialog.destroy()
 
         except ValueError as e:
